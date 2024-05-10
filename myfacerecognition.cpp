@@ -2,6 +2,8 @@
 
 #include <future>
 
+#include <opencv2/xfeatures2d/nonfree.hpp>
+
 MyFaceRecognition::MyFaceRecognition(){
 
 
@@ -40,7 +42,8 @@ void MyFaceRecognition::PrepareDataset(string FileData){
     facemark->loadModel("/home/nikita/QtProj/build-TrainLBF-Desktop-Release/MyModel.yaml");
     net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
     net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
-    string fn_csv = string(FileData);
+    func_get_image(FileData);
+    string fn_csv = "LBPH_people.csv";
     try {
         read_csv(fn_csv, images, labels, false);
     } catch (const cv::Exception& e) {
@@ -60,14 +63,11 @@ void MyFaceRecognition::PrepareDataset(string FileData){
     MSER_max_evolution=1000; MSER_min_marign=0.01;
 
 
-    int BRISK_tresh=30, BRISK_octaves=3; float BRISK_patternScale=1.0f;
-
-    BRISK_tresh=30; BRISK_octaves=3;
 
     Ptr<MSER> mser = MSER::create(MSER_delta, MSER_min_area, MSER_max_area, MSER_max_variation, MSER_min_diversity, MSER_max_evolution, MSER_area_treshhold, MSER_min_marign, MSER_edge_blur_stage);
 
     //Ptr<BRISK> brisk = BRISK::create(BRISK_tresh, BRISK_octaves, BRISK_patternScale);
-    Ptr<SIFT> sift = SIFT::create(300, 4, 0.1, 15);
+    Ptr<xfeatures2d::SURF> sift = xfeatures2d::SURF::create(300);
 
     //Ptr<AKAZE> akaze = AKAZE::create();
     //sift->setNFeatures(100);
@@ -76,18 +76,25 @@ void MyFaceRecognition::PrepareDataset(string FileData){
     //future<string> RE[images.size()];
     string RE[images.size()];
     for (int i=0; i<images.size(); i++){
-        //imshow("Test1", images[i]);
+        imshow("Test1", images[i]);
 
         if (!this->ExtractFace(images[i], images[i])){
             continue;
         }
 
-        auto CLAHE = createCLAHE(10);
+        imshow("Before CLAHE", images[i]);
+        auto CLAHE = createCLAHE(5);
+
         CLAHE->apply(images[i], images[i]);
         //NormalizeImage(images[i], images[i]);
-        //imshow("Test2", images[i]);
+        imshow("After CLAHE 5", images[i]);
+
+        //cv::GaussianBlur(images[i], images[i], cv::Size(9, 9), 5, 5);
+        //imshow("GausianBlur After CLAHE", images[i]);
+
         //waitKey();
         //continue;
+
         cout << i << "\n"; cout.flush();
         //RE[i] = std::async(std::launch::async, [=]{
             std::vector<cv::KeyPoint> keypoints;
@@ -110,7 +117,14 @@ void MyFaceRecognition::PrepareDataset(string FileData){
                     sum+=region.size();
                 }
                 long double coef=350/sum;
+                cv::Mat resultImage2;
+                cv::cvtColor(tempo, resultImage2, cv::COLOR_GRAY2BGR);
                 for (const auto& region : regions){
+                    vector<Point> contour(region); // Convert MSER region to contour
+                            vector<vector<Point>> contours;
+                            contours.push_back(contour);
+                            //drawContours(resultImage2, contours, 0, Scalar(0), 2); // Green color, thickness = 2
+
                     if (region.size()<30)
                         continue;
                     std::vector<cv::KeyPoint> keypoints1;
@@ -133,17 +147,19 @@ void MyFaceRecognition::PrepareDataset(string FileData){
                     keypoints.insert(keypoints.end(), selectedKeypoints.begin(), selectedKeypoints.end());
 
                 }
+                imshow("MSER CONTUR", resultImage2);
                 //std::sort(keypoints.begin(), keypoints.end(), compareKeyPointsByResponse);
                 std::sort(keypoints.begin(), keypoints.end(), [](const cv::KeyPoint& a, const cv::KeyPoint& b) {
                     return a.response<b.response;
                 });
-                keypoints.resize(300);
+                //keypoints.resize(3000);
                 Mat descriptor;
-                sift->compute(tempo, keypoints, descriptor);
+                //sift->detectAndCompute(tempo, tempo, keypoints, descriptor);
+                //sift->compute(tempo, keypoints, descriptor);
                 cv::normalize(descriptor, descriptor, 1.0, 0.0, cv::NORM_L2);
                 //cout << keypoints.size() << " " << regions.size() << "\n"; cout.flush();
-                //cv::Mat resultImage;
-                //cv::cvtColor(tempo, resultImage, cv::COLOR_GRAY2BGR);
+                cv::Mat resultImage;
+                cv::cvtColor(tempo, resultImage, cv::COLOR_GRAY2BGR);
 
                 //for (const auto& box : mserBoundBoxes) {
                 //    cv::rectangle(resultImage, box, cv::Scalar(0, 255, 0), 2);
@@ -151,7 +167,7 @@ void MyFaceRecognition::PrepareDataset(string FileData){
 
                 // Визуализация KeyPoints
                 //cv::drawKeypoints(resultImage, keypoints, resultImage, cv::Scalar(255, 0, 0), cv::DrawMatchesFlags::DRAW_OVER_OUTIMG);
-                //resultImage.copyTo(images[i]);
+                resultImage.copyTo(images[i]);
                 // Отобразить результат
 
                 //equalizeHist(images[i], tempo);
@@ -160,11 +176,11 @@ void MyFaceRecognition::PrepareDataset(string FileData){
                 //sift->detect(tempo, keypoints1);
                 //cv::drawKeypoints(resultImage, keypoints1, resultImage, cv::Scalar(255, 0, 0), cv::DrawMatchesFlags::DRAW_OVER_OUTIMG);
 
-                //cv::imshow("MSER and BRISK(min_diversity="+to_string(mser->getMinDiversity()), resultImage);
+                cv::imshow("MSER", resultImage);
                 //cv::imshow("MSER and BRISK(min_marign="+to_string(mser->getMinMargin()), resultImage);
             //}
 
-            //cv::waitKey(0);
+            cv::waitKey(0);
             //continue;
 
             stringstream ss;
@@ -199,7 +215,7 @@ void MyFaceRecognition::PrepareDataset(string FileData){
 bool MyFaceRecognition::Init(string FileData, string loadPath)
 {
     net=cv::dnn::readNetFromCaffe("/home/nikita/Загрузки/deploy.prototxt", "/home/nikita/Загрузки/res10_300x300_ssd_iter_140000_fp16.caffemodel");
-    facemark->loadModel("/home/nikita/QtProj/build-TrainLBF-Desktop-Release/MyModel.yaml");
+    facemark->loadModel("/home/nikita/QtProj/build-TrainLBF-Desktop-Release/MyModel3.yaml");
     //facemark->loadModel("/home/nikita/GSOC2017/data/lbfmodel.yaml");
     net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
     net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
@@ -345,7 +361,7 @@ bool MyFaceRecognition::ExtractFace(Mat input, Mat& output, double ctotal, uint 
     auto x2t=l*cos(total+a), y2t=l*sin(total+a);
     auto x=max(abs(x1t), abs(x2t)), y=max(abs(y1t), abs(y2t));
 
-    //rectangle(image, Rect(centre.x-x, centre.y-y, 2*x, 2*y), Scalar(255,0,255));
+    rectangle(image, Rect(centre.x-x, centre.y-y, 2*x, 2*y), Scalar(0,0,255), 5);
     //cout << Rect(centre.x-x, centre.y-y, 2*x, 2*y) << "\n";
     //imshow(image)
     //imshow("face", image);
@@ -368,7 +384,8 @@ bool MyFaceRecognition::ExtractFace(Mat input, Mat& output, double ctotal, uint 
             (p.y-faces[0].y)*512.0/faces[0].height
         ));
     }
-    NormalizeImage(output, output, shape, faces[0], c);
+    NormalizeImage(output, output);
+    getOnlyFace(output, output, shape, faces[0]);
     //resize(image, image, Size(300,300))
 
     //output=Mat(image, faces[0]);
@@ -572,133 +589,40 @@ cv::Mat grayworld_normalization(const cv::Mat& image) {
     return normalized_image;
 }
 
-void MyFaceRecognition::NormalizeImage(Mat& input, Mat& output, vector<Point2f>  &shapes, Rect faceRec, uint c){
+void MyFaceRecognition::NormalizeImage(Mat& input, Mat& output){
     input.copyTo(output);
 
-    /*
-    std::vector<cv::Point2f> keypoints_2d = {
-        sh[0][0],
-        sh[0][1],
-        sh[0][14],
-        sh[0][15],
-        sh[0][29],
-        sh[0][32],
-        sh[0][36],
-        sh[0][42],
-        sh[0][48],
-        sh[0][54],
-    };
-    std::vector<cv::Point3f> keypoints_3d_model = {
-        // Левая часть лица
-        { -50.0f*100, 30.0f*100, 0.0f*100 },    // 1
-        { -40.0f*100, 60.0f*100, 10.0f*100 },   // 2
-        // ... Добавьте остальные точки левой части
-        // Правая часть лица
-        { 40.0f*100, 60.0f*100, 10.0f*100 },    // 15
-        { 50.0f*100, 30.0f*100, 0.0f*100 },     // 16
-        // ... Добавьте остальные точки правой части
-        // Центр лица
-        { 0.0f*100, -50.0f*100, -10.0f*100 },   // 30 (нос)
-        { 0.0f*100, 0.0f*100, -30.0f*100 },     // 33 (нос)
-        // ... Добавьте остальные точки центральной части
-        // Глаза
-        { -20.0f*100, -20.0f*100, -10.0f*100 }, // 37 (левый глаз)
-        { 20.0f*100, -20.0f*100, -10.0f*100 },  // 43 (правый глаз)
-        // ... Добавьте остальные точки для глаз
-        // Рот
-        { -20.0f*100, 20.0f*100, -30.0f*100 },  // 49 (левый угол рта)
-        { 20.0f*100, 20.0f*100, -30.0f*100 }    // 55 (правый угол рта)
-    };
-    // Вектора для хранения результатов
-    cv::Mat rvec, tvec;
-    double focal_length = output.cols;
-    cv::Point2d optical_center(output.cols / 2, output.rows / 2);
-    cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) <<
-                                 focal_length, 0, optical_center.x,
-                             0, focal_length, optical_center.y,
-                             0, 0, 1);
-
-
-    // Вызовите solvePnP с флагом SOLVEPNP_UPNP
-    cv::solvePnPRansac(keypoints_3d_model, keypoints_2d, camera_matrix, cv::Mat(), rvec, tvec);
-    cv::Mat rotatedImg;
-
-    // Создание матрицы преобразования 3x3
-    cv::Mat transformationMatrix = cv::Mat::eye(3, 3, CV_64F);
-    cv::Mat rotationMatrix;
-    cv::Rodrigues(rvec, rotationMatrix);
-    rotationMatrix.colRange(0, 2).copyTo(transformationMatrix.colRange(0, 2));
-    tvec.copyTo(transformationMatrix.col(2));
-
-    // Применение преобразования к изображению
-    cv::warpAffine(output, rotatedImg, transformationMatrix.rowRange(0, 2), output.size());
-
-
-
-
-
-    cv::imshow("Normalized Image", rotatedImg);
-
-    // rvec - вектор вращения, tvec - вектор трансляции
-    std::cout << "Rotation Vector:\n" << rotationMatrix << "\n\nTranslation Vector:\n" << tvec << "\n\nview:\n" << transformationMatrix << std::endl;
-
-    */
-    resize(output, output, Size(input.cols*3,input.rows*3), 0,0, INTER_CUBIC);
-
-    //double fx=512.0/input.cols, fy=512.0/input.rows;
-
-    //drawMarker(output, (shapes[5]-shapes[33])*1.1+shapes[33], Scalar(255,0,0));
-    //drawMarker(output, (shapes[11]-shapes[33])*1.1+shapes[33], Scalar(255,0,0));
-    // Преобразование изображения в оттенки серого
-    cvtColor(output, output, COLOR_RGB2Lab);
-    Mat chanels[output.channels()];
-    split(output, chanels);
-    for (auto now : chanels){
-        cv::GaussianBlur(now, now, cv::Size(9, 9), 0);
-
-        //morphologyEx(now, now, MORPH_CLOSE,
-        //             getStructuringElement(MorphShapes::MORPH_ELLIPSE, Size(5,5)), Point(2,2), 1);
-    }
-    merge(chanels, output.channels(), output);
-
-    cvtColor(output, output, COLOR_Lab2RGB);
-    grayworld_normalization(output);
+    resize(output, output, Size(512,512), 0,0, INTER_CUBIC);
 
     cv::Mat grayImage, grays[3];
     cv::cvtColor(output, grayImage, cv::COLOR_RGB2HSV);
     split(grayImage, grays);
     grayImage=grays[2];
 
-    // Улучшение контраста изображения
-
-    // Нормализация яркости изображения
     cv::normalize(grayImage, grayImage, 0, 255, cv::NORM_MINMAX);
-
-    // Увеличение резкости изображения
-    cv::Mat sharpenedImage;
-    cv::GaussianBlur(grayImage, sharpenedImage, cv::Size(0, 0), 3);
-    cv::addWeighted(grayImage, 1.5, sharpenedImage, -0.5, 0, sharpenedImage);
-
-    // Применение гауссова размытия для уменьшения шума
-    //cv::GaussianBlur(sharpenedImage, sharpenedImage, cv::Size(3, 3), 0);
-    normalize(sharpenedImage, sharpenedImage, 0, 255, NORM_MINMAX);
-    // Применение адаптивной бинаризации для выделения контуров
-    //cv::Mat binaryImage;
-    //cv::adaptiveThreshold(sharpenedImage, binaryImage, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 11, 2);
-    //cv::equalizeHist(grayImage, grayImage);
+    cv::medianBlur(grayImage, grayImage, 5);
+    //cv::GaussianBlur(grayImage, grayImage, cv::Size(9, 9), 5, 5);
     Mat output2;
     output.copyTo(output2);
-    output=sharpenedImage;
+    output=grayImage;
+}
 
-
+void MyFaceRecognition::getOnlyFace(Mat& input, Mat& output3, vector<Point2f>  &shapes, Rect faceRec){
+    Mat output2, output;
+    input.copyTo(output);
     vector<vector<Point2f>> sh;
     vector<Rect> fa={Rect(0, 0, output.cols, output.rows)};
     facemark->fit(output, fa, sh);
 
 
     //if (sh.size())
-    //drawFacemarks(output, sh[0]);
-
+    {
+        Mat facemark; output.copyTo(facemark);
+        cvtColor(facemark, facemark, COLOR_GRAY2RGB);
+        drawFacemarks(facemark, sh[0]);
+        //resize(facemark, facemark, Size(512,512));
+        imshow("facemarks", facemark);
+    }
     //return;
     //cvtColor(output, output, COLOR_RGB2GRAY);
 
@@ -779,19 +703,16 @@ void MyFaceRecognition::NormalizeImage(Mat& input, Mat& output, vector<Point2f> 
         255,
         THRESH_TOZERO
     );
-    //imshow("Trashhold", output);
     output.convertTo(output, CV_8UC1, 255);
-    Mat chanel[output2.channels()];
-    Mat chan[output2.channels()];
-    split(output2, chanel);
-    for (int i=0; i<output2.channels(); ++i)
-        chanel[i].copyTo(chan[i], output);
-    //Mat chanels_res[]={chanel[0], chanel[1], chanel[2], output};
-    output2=Mat::zeros(output.rows, output.cols, CV_8UC3);
-    merge(chan, 3, output);
-    grayworld_normalization(output);
+    output2=Mat::zeros(input.rows, input.cols, CV_8UC1);
+    //imshow("i");
+    imshow("Trashhold", output);
+    input.copyTo(output2, output);
+
+    output2.copyTo(output);
+    //grayworld_normalization(output);
     normalize(output, output, 0, 255, NORM_MINMAX);
-    cvtColor(output, output, COLOR_RGB2GRAY);
+    //cvtColor(output, output, COLOR_RGB2GRAY);
 
     /*
     morphologyEx(output, output, MORPH_CLOSE,
@@ -833,6 +754,7 @@ void MyFaceRecognition::NormalizeImage(Mat& input, Mat& output, vector<Point2f> 
     //cvtColor(output, output2, COLOR_RGB2HSV);
     //split(output2, chanel);
     //output=chanel[0];
+    output.copyTo(output3);
 }
 
 pair<bool, double> MyFaceRecognition::compareFacesWithSIFT_RANSAC(cv::Mat descriptorsReference, cv::Mat descriptorsTest, vector<KeyPoint> kp1, vector<KeyPoint> kp2, double adding) {

@@ -4,6 +4,7 @@
 #include "opencv2/core.hpp"
 #include "opencv2/face.hpp"
 #include "opencv2/highgui.hpp"
+#include <opencv2/xfeatures2d.hpp>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -23,7 +24,8 @@ class MyFaceRecognition
 public:
     MyFaceRecognition();
     bool Init(string, string="");
-    void NormalizeImage(Mat& input, Mat& output, vector<Point2f> &shapes, Rect faceRec=Rect(0,0,0,0), uint c=0);
+    void getOnlyFace(Mat& input, Mat& output, vector<Point2f> &shapes, Rect faceRec=Rect(0,0,0,0));
+    void NormalizeImage(Mat& input, Mat& output);
     void PrepareDataset(string FileData);
     bool ExtractFace(Mat input, Mat& output, double total=0.0, uint c=0);
     vector<pair<int, double> > GetSimilarFacesLBPH(Mat& ProcessingImage, int count, double tresh=30.0, uint n=0);
@@ -258,6 +260,18 @@ private:
             }
 
         }
+    }
+
+    void func_get_image(string path){
+        ifstream st(path);
+        ofstream o("LBPH_people.csv");
+        string temp;
+        while(!st.eof()){
+            getline(st, temp);
+            if (temp=="") break;
+            o << temp << " " << temp.substr(string_view("/home/nikita/QtProj/GetPictureStudents/Faces/Face_").length(), temp.length()-4) << "\n";
+        }
+        o.close();
     }
 };
 
